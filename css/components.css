@@ -1,0 +1,114 @@
+/* The Nodal Control Panel */
+.panel-box { 
+    background: var(--panel); 
+    border: 1px solid var(--border); 
+    padding: 40px; 
+    border-radius: 12px; 
+    text-align: center; 
+    width: 340px; 
+    box-shadow: 0 0 50px rgba(0,0,0,0.8); 
+}
+
+.id-display { 
+    font-size: 22px; 
+    color: #fff; 
+    margin-bottom: 5px; 
+    cursor: pointer; 
+    border-bottom: 1px dashed #555; 
+    display: inline-block; 
+    padding: 5px 10px;
+}
+
+/* Inputs & Buttons */
+input { 
+    width: 100%; 
+    padding: 15px; 
+    margin: 15px 0; 
+    background: #000; 
+    border: 1px solid var(--border); 
+    color: var(--primary); 
+    text-align: center; 
+    font-family: monospace; 
+    box-sizing: border-box; 
+}
+
+button { 
+    width: 100%; 
+    padding: 15px; 
+    background: var(--primary); 
+    border: none; 
+    color: #000; 
+    font-weight: 900; 
+    cursor: pointer; 
+    border-radius: 4px; 
+    transition: 0.3s; 
+}
+
+button:hover { filter: brightness(1.2); box-shadow: 0 0 20px rgba(0,229,255,0.4); }
+
+/* The Gesture Cursor (The Lens) */
+#cursor-container { 
+    position: absolute; 
+    width: 0; 
+    height: 0; 
+    transform: translate(-50%, -50%); 
+    display: none; 
+    z-index: 200; 
+    pointer-events: none; 
+}
+
+.optic { 
+    position: absolute; 
+    top: 50%; 
+    left: 50%; 
+    transform: translate(-50%, -50%); 
+    width: 350px; 
+    height: 350px; 
+    border-radius: 50%; 
+    border: 2px solid var(--primary);
+    box-sizing: border-box; 
+    background-color: var(--bg); 
+    background-size: contain; 
+    background-repeat: no-repeat; 
+}
+
+/* Gesture Visual States */
+#cursor-container.scanning .optic { border-color: var(--primary); box-shadow: 0 0 30px rgba(0,229,255,0.2); }
+#cursor-container.locked .optic { border: 4px solid var(--secondary); box-shadow: 0 10px 50px rgba(0,255,157,0.4); }
+#cursor-container.authorizing .optic { border: 6px solid var(--gold); animation: pulse 0.3s infinite; }
+#cursor-container.unlocking .optic { border-color: #fff; box-shadow: 0 0 50px #fff; }
+
+@keyframes pulse { 50% { transform: translate(-50%, -50%) scale(1.02); } }
+
+/* Gallery Thumbnails */
+#gallery { 
+    display: flex; 
+    gap: 12px; 
+    justify-content: center; 
+    overflow-x: auto; 
+    padding: 10px 0; 
+}
+
+.thumb { 
+    width: 65px; 
+    height: 65px; 
+    border: 2px solid var(--border); 
+    opacity: 0.5; 
+    cursor: pointer; 
+    transition: 0.3s; 
+    flex-shrink: 0;
+}
+
+.thumb.active { border-color: var(--primary); opacity: 1; transform: scale(1.1); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+#status-pill { 
+    display: inline-block; 
+    padding: 8px 20px; 
+    background: rgba(0,0,0,0.9); 
+    border: 1px solid var(--border); 
+    border-radius: 30px; 
+    font-size: 11px; 
+    letter-spacing: 1px; 
+    color: #888; 
+}

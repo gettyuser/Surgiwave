@@ -1,0 +1,27 @@
+@import 'layout.css';
+@import 'components.css';
+
+:root { 
+    --primary: #00e5ff;   /* Neon Blue */
+    --secondary: #00ff9d; /* Neon Green */
+    --gold: #ffd700;      /* Transfer Gold */
+    --alert: #ff0055;     /* Error Red */
+    --bg: #0a0a0a; 
+    --panel: #111; 
+    --border: #333;
+}
+
+body { 
+    margin: 0; 
+    background: var(--bg); 
+    overflow: hidden; 
+    font-family: 'Segoe UI', 'Roboto Mono', monospace; 
+    cursor: default; 
+    color: #eee; 
+}
+
+/* Scrollbar Styling for Gallery */
+::-webkit-scrollbar { height: 4px; }
+::-webkit-scrollbar-track { background: #000; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--primary); }
