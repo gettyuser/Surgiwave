@@ -1,54 +1,57 @@
-# Surgi-Wave 🌊✋
+# Surgiwave 🌊✋
 
-**A Touchless Medical Image Interface for Sterile Environments.**
+**A Touchless, Modular Medical Imaging Interface for Sterile Environments.**
 
-Surgi-Wave is a gesture-controlled image viewer designed for operating rooms. It allows surgeons to manipulate medical imagery (zoom, pan, scroll) without touching screens or peripherals, preserving sterility. It features a "Hub & Spoke" architecture, allowing external devices (like phones) to act as wireless capture tools and passive screens to act as remote viewers.
+Surgiwave is a professional-grade, gesture-controlled system designed for operating rooms and clinical settings. It enables medical professionals to navigate, zoom, and transfer diagnostic imagery without physical contact, preserving the sterile field and eliminating the need for unsterile peripherals.
 
-![Status](https://img.shields.io/badge/Status-Prototype-green)
-![Tech](https://img.shields.io/badge/Tech-MediaPipe%20%7C%20PeerJS%20%7C%20WebRTC-blue)
+![Status](https://img.shields.io/badge/Status-Operational-success)
+![Tech](https://img.shields.io/badge/Stack-Modular%20JS%20%7C%20MediaPipe%20%7C%20PeerJS-blue)
 
-## 🚀 Features
+---
 
-* **Touchless Navigation:** precise hand tracking using Google MediaPipe.
-* **Safety Lock:** "Dead man's switch" logic ensures the cursor never drifts unintentionally.
-* **Multi-Device Hub:**
-    * **Sender (Hub):** The central controller. Handles gestures and file management.
-    * **Receiver:** Passive display for students or secondary monitors.
-    * **Camera Remote:** Connect any smartphone to beam high-res photos directly to the Hub.
-* **Strict Gesture Recognition:** Advanced anatomical vector checks to prevent false positives (e.g., distinguishing a fist from a thumbs-up).
-* **Local Privacy:** All processing happens in the browser. No data is sent to the cloud (P2P only).
+## 🛠️ System Architecture
 
-## 🛠️ Installation & Usage
+The project utilizes a **Modular Design Pattern**, separating core logic into specialized services. This architecture ensures high maintainability and professional-grade code organization.
 
-### Prerequisites
-Because this app uses the **Camera** and **WebRTC**, browsers require it to be served over **HTTPS** (or `localhost`). You cannot simply drag the HTML files into your browser if you want to connect a phone.
+* **`index.html` (The Hub):** The primary control unit used by the lead surgeon for data loading and gesture input.
+* **`receiver.html` (The Monitor):** A passive display unit for secondary monitors or observation decks.
+* **`js/vision.js`:** High-performance AI engine utilizing **Google MediaPipe** for real-time hand landmarking.
+* **`js/network.js`:** Peer-to-Peer data synchronization via **PeerJS (WebRTC)** for instant image beaming.
+* **`js/state.js`:** A centralized reactive state manager handling cross-module data flow.
 
-### The Workflow
-1.  **Open `sender.html`** on the main computer (The Hub).
-    * Click "Copy ID".
-2.  **Open `receiver.html`** on a second screen.
-    * Paste the Sender ID and connect.
+---
 
-## 🖐️ Gesture Guide
+## 🚀 Key Features
 
-| Gesture | Action | Visual Feedback |
-| :--- | :--- | :--- |
-| **Open Hand** ✋ | **Scan / Move** | Cursor turns **GREEN**. |
-| **3 Fingers** ✌️+☝️ | **Lock Position** | Cursor turns **BLUE**. Image freezes. |
-| **Fist** ✊ | **Idle / Hide** | Cursor disappears. |
-| **Thumbs Up** 👍 | **Transfer** | Cursor turns **GOLD**. Sends current view to Receiver. |
-| **Hold Open Hand** ✋ | **Unlock Safety** | Hold for **0.25s** to unlock a locked image. |
+### 1. Anatomical Gesture Recognition
+Surgiwave implements advanced joint-angle calculations to eliminate false positives in surgical environments:
+* **Strict Thumb Rule:** Anatomically differentiates between a closed fist and a thumbs-up by calculating the Thumb Tip elevation relative to the Index Finger MCP joint.
+* **Safety Latch Logic:** A "Dead Man's Switch" mechanism that freezes the cursor immediately when a gesture is released.
 
-## ⚙️ Technology Stack
+### 2. Sterile Control Workflow
+* **Open Hand ✋:** Initiates spatial scanning and image panning.
+* **3-Finger Latch ✌️+☝️:** High-precision coordinate lock to freeze the view on a specific ROI.
+* **Safety Unlock (0.25s):** Requires a sustained open-hand hold to prevent accidental cursor drift.
+* **Strict Thumbs-Up 👍:** Triggers a P2P binary transfer (Blob) of the current image to the Receiver node.
 
-* **Core:** HTML5, CSS3, Vanilla JavaScript (ES6).
-* **Computer Vision:** [MediaPipe Hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker).
-* **Networking:** [PeerJS](https://peerjs.com/) (WebRTC wrapper for P2P data).
+### 3. Data Integrity & Privacy
+By utilizing **WebRTC**, medical images are transmitted directly between local browsers. No data is stored on a server, ensuring a privacy-first approach for sensitive clinical imagery.
 
-## ⚠️ Troubleshooting
+---
 
-* **Camera not working on phone?** Ensure you are accessing the site via `HTTPS`, not `HTTP`. Mobile browsers block camera access on insecure connections.
-* **"Connecting..." forever?** Ensure both devices are on the same network or allow P2P traffic through your firewall.
+## 📂 Project Structure
 
-## 📄 License
-MIT License. Free for educational and medical research use.
+```text
+Surgiwave/
+├── index.html            # Hub Interface
+├── receiver.html         # Monitor Interface
+├── css/
+│   ├── main.css          # Design Manifest
+│   ├── layout.css        # Spatial Grid
+│   └── components.css    # UI/UX Elements
+└── js/
+    ├── main.js           # Bootloader
+    ├── config.js         # Global Constants
+    ├── state.js          # App State Management
+    ├── network.js        # PeerJS Communication
+    └── vision.js         # MediaPipe AI Logic
