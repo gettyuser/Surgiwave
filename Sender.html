@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Surgi-Wave: Sender (Local Hub)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root { --primary: #00e5ff; --bg: #0a0a0a; --panel: #111; --border: #333; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Segoe UI', monospace; cursor: default; color: #eee; }
+
+        /* OVERLAY */
+        #connect-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(5, 5, 5, 0.98); z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .panel-box { background: var(--panel); border: 1px solid var(--border); padding: 30px; border-radius: 12px; text-align: center; width: 300px; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        input { width: 100%; padding: 12px; margin: 15px 0; background: #000; border: 1px solid #444; color: var(--primary); text-align: center; font-family: monospace; font-size: 16px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--primary); border: none; color: #000; font-weight: bold; cursor: pointer; border-radius: 4px; font-size: 14px; transition: 0.2s; }
+        .id-display { font-size: 20px; color: #fff; margin-bottom: 5px; cursor: pointer; border-bottom: 1px dashed #666; display: inline-block; }
+
+        /* APP */
+        #app-container { display: none; opacity: 0; transition: opacity 1s; }
+        #app-container.active { display: block; opacity: 1; }
+        #viewport { position: relative; width: 100vw; height: 100vh; background-size: contain; background-repeat: no-repeat; background-position: center; transition: background-image 0.1s ease; }
+
+        /* CURSOR */
+        #cursor-container { position: absolute; width: 0; height: 0; transform: translate(-50%, -50%); display: none; z-index: 200; pointer-events: none; }
+        .optic { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); transition: width 0.1s, height 0.1s, border-color 0.1s; border-radius: 50%; box-sizing: border-box; background-color: var(--bg); background-size: contain; background-repeat: no-repeat; }
+        
+        #cursor-container.scanning .optic { width: 350px; height: 350px; border: 2px solid var(--primary); box-shadow: 0 0 30px rgba(0,229,255,0.3); }
+        #cursor-container.locked .optic { width: 350px; height: 350px; border: 4px solid #00ff9d; box-shadow: 0 10px 50px rgba(0,255,157,0.6); }
+        
+        /* AUTHORIZING (Gold - Strict Hold) */
+        #cursor-container.authorizing .optic { 
+            width: 350px; height: 350px; border: 6px solid #ffd700; 
+            box-shadow: 0 0 80px rgba(255, 215, 0, 0.8);
+            animation: pulse 0.3s infinite; 
+        }
+        
+        /* UNLOCKING ANIMATION */
+        #cursor-container.unlocking .optic { border: 4px solid #fff; box-shadow: 0 0 50px #fff; }
+
+        @keyframes pulse { 50% { transform: translate(-50%, -50%) scale(1.02); } }
+
+        /* HUD */
+        #hud { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: auto; }
+        #status-pill { display: inline-block; padding: 8px 16px; background: rgba(0,0,0,0.8); border: 1px solid #333; border-radius: 20px; font-size: 12px; color: #888; margin-bottom: 10px; }
+        #gallery { display: flex; gap: 8px; justify-content: center; overflow-x: auto; padding-bottom: 5px; }
+        .thumb { width: 60px; height: 60px; border: 1px solid #333; opacity: 0.5; cursor: pointer; transition: 0.2s; }
+        .thumb.active { border-color: var(--primary); opacity: 1; transform: scale(1.1); }
+        .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    </style>
+</head>
+<body>
+
+    <div id="connect-overlay">
+        <div class="panel-box">
+            <div style="color:#666; font-size:10px; letter-spacing:2px; margin-bottom:10px;">SENDER ID</div>
+            <div class="id-display" id="my-id" onclick="navigator.clipboard.writeText(this.innerText)">...</div>
+            <div style="color:#444; font-size:10px; margin-bottom:20px;">(Click to Copy)</div>
+            <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
+            <input type="text" id="partner-id" placeholder="Enter Receiver ID">
+            <button onclick="connectToPartner()" id="btn-conn">CONNECT</button>
+            <div id="conn-status" style="margin-top:15px; font-size:12px; color:#ff0055;"></div>
+        </div>
+    </div>
+
+    <div id="app-container">
+        <div id="viewport">
+            <div id="cursor-container" class="idle"><div class="optic"></div></div>
+        </div>
+        <div id="hud">
+            <div id="status-pill">SYSTEM READY</div>
+            <div id="gallery"></div>
+            <input type="file" id="file-input" accept="image/*" multiple style="display:none">
+            <div style="margin-top:5px; font-size:10px; color:#444; cursor:pointer;" onclick="document.getElementById('file-input').click()">+ UPLOAD LOCAL FILES</div>
+        </div>
+    </div>
+
+    <canvas id="img-canvas" style="display:none;"></canvas>
+
+    <script type="module">
+        import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+        const ZOOM = 3.0; const SMOOTH = 0.15; 
+        const DEFAULT_IMG = 'https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&q=80&w=2000';
+        const UNLOCK_DELAY = 250; // 0.25 seconds hold to unlock
+
+        let physics = { x: 0, y: 0 }, target = { x: 0, y: 0 };
+        // FIX: hasImage starts true for default, ensures zoom works immediately
+        let state = { mode: 'IDLE', connected: false, unlockStart: 0, hasImage: true };
+        let currentImg = { w: 1, h: 1, url: DEFAULT_IMG };
+        let mediaLib = [{ id: 0, url: DEFAULT_IMG }];
+        let curIdx = 0;
+
+        const overlay = document.getElementById("connect-overlay");
+        const app = document.getElementById("app-container");
+        const container = document.getElementById("cursor-container");
+        const optic = document.querySelector(".optic");
+        const viewport = document.getElementById("viewport");
+        const status = document.getElementById("status-pill");
+        const gallery = document.getElementById("gallery");
+
+        // --- MEDIA ---
+        // Handles local file uploads and adds to gallery
+        function addImageToGallery(url) {
+            mediaLib.push({ id: mediaLib.length, url: url });
+            const idx = mediaLib.length - 1;
+            const t = document.createElement('div'); t.className = 'thumb';
+            t.innerHTML = `<img src="${url}">`;
+            t.onclick = () => selectPhoto(idx);
+            gallery.appendChild(t);
+            selectPhoto(idx); // Auto-select new image
+            flashStatus("IMAGE LOADED", "#00ff9d");
+        }
+
+        function selectPhoto(id) {
+            curIdx = id;
+            const item = mediaLib.find(x => x.id === id);
+            viewport.style.backgroundImage = `url(${item.url})`;
+            optic.style.backgroundImage = `url(${item.url})`;
+            const img = new Image(); img.src = item.url;
+            img.onload = () => { 
+                currentImg.w = img.width; currentImg.h = img.height; 
+                state.hasImage = true; // Ensure zoom logic triggers
+                if(state.mode !== 'IDLE') updateZoom();
+            };
+            document.querySelectorAll('.thumb').forEach((t, i) => t.classList.toggle('active', i === id));
+        }
+
+        // --- PEERJS ---
+        const peer = new Peer();
+        let receiverConn = null;
+
+        peer.on('open', id => document.getElementById('my-id').innerText = id);
+        
+        // Listen for connection from Receiver
+        peer.on('connection', (conn) => {
+            conn.on('data', data => {
+                // Respond to Pull Request
+                if(data === 'PULL_REQUEST') {
+                    if(state.mode === 'AUTHORIZING') transmitImage();
+                    else flashStatus("DENIED - HOLD THUMB TO SEND", "red");
+                }
+            });
+            if(!receiverConn) { receiverConn = conn; activateApp(); }
+        });
+
+        // Initiate connection to Receiver
+        window.connectToPartner = function() {
+            const pid = document.getElementById("partner-id").value.trim();
+            if(!pid) return;
+            document.getElementById("conn-status").innerText = "Connecting...";
+            receiverConn = peer.connect(pid);
+            receiverConn.on('open', () => {
+                activateApp();
+                receiverConn.on('data', data => {
+                    if(data === 'PULL_REQUEST') {
+                        if(state.mode === 'AUTHORIZING') transmitImage();
+                        else flashStatus("DENIED - HOLD THUMB TO SEND", "red");
+                    }
+                });
+            });
+        }
+
+        function activateApp() {
+            state.connected = true;
+            overlay.style.display = "none";
+            app.classList.add("active");
+            document.body.style.cursor = "none";
+        }
+
+        function transmitImage() {
+            const item = mediaLib.find(x => x.id === curIdx);
+            if (!item || !receiverConn) return;
+            const prev = state.mode;
+            state.mode = 'TRANSMITTING'; updateUI();
+            const img = new Image(); img.crossOrigin = "Anonymous"; img.src = item.url;
+            img.onload = () => {
+                const cvs = document.getElementById("img-canvas");
+                let w = img.width, h = img.height;
+                // Optimization: Resize large images before sending
+                if(w > 1200) { const r = 1200/w; w*=r; h*=r; }
+                cvs.width = w; cvs.height = h;
+                const ctx = cvs.getContext("2d");
+                ctx.drawImage(img, 0, 0, w, h);
+                cvs.toBlob(blob => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        receiverConn.send({ type: 'BINARY_IMAGE', payload: reader.result, mime: 'image/jpeg' });
+                        flashStatus("SENT!", "#ffd700");
+                        setTimeout(() => { state.mode = prev; updateUI(); }, 500);
+                    };
+                    reader.readAsArrayBuffer(blob);
+                }, 'image/jpeg', 0.6);
+            }
+        }
+
+        // --- VISION ---
+        async function initVision() {
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm");
+            const landmarker = await HandLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: "GPU" }, runningMode: "VIDEO", numHands: 1 });
+            const video = document.createElement("video");
+            navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+                video.srcObject = stream; video.play();
+                video.addEventListener("loadeddata", () => loop(landmarker, video));
+            });
+        }
+
+        function loop(landmarker, video) {
+            if (!state.connected) { requestAnimationFrame(() => loop(landmarker, video)); return; }
+            const now = performance.now();
+            const results = landmarker.detectForVideo(video, now);
+            
+            if (results.landmarks.length > 0) {
+                const lm = results.landmarks[0];
+                const wrist = lm[0];
+                
+                // Finger Count Logic
+                const fingers = [8,12,16,20].filter(i => Math.hypot(lm[i].x-wrist.x, lm[i].y-wrist.y) > Math.hypot(lm[i-2].x-wrist.x, lm[i-2].y-wrist.y)*1.1).length;
+                
+                // --- STRICT THUMB ALGORITHM ---
+                // 1. Thumb Tip (4) must be higher (y <) than Thumb IP (3)
+                const thumbUp = lm[4].y < lm[3].y; 
+                // 2. Thumb Tip (4) must be higher than Index MCP (5) (Knuckle) - Kills Fist False Positive
+                const thumbAboveHand = lm[4].y < lm[5].y - 0.05; 
+                // 3. Fingers Curled
+                const fingersCurled = (lm[8].y > lm[6].y) && (lm[12].y > lm[10].y) && (lm[16].y > lm[14].y) && (lm[20].y > lm[18].y);
+                
+                const isStrictThumbUp = thumbUp && thumbAboveHand && fingersCurled;
+
+                // --- STATE MACHINE ---
+                
+                if (state.mode === 'LOCKED' || state.mode === 'AUTHORIZING') {
+                    if (fingers >= 4) { // UNLOCK ATTEMPT
+                        if (state.unlockStart === 0) state.unlockStart = now;
+                        
+                        if (now - state.unlockStart > UNLOCK_DELAY) {
+                            state.mode = 'SCANNING';
+                            state.unlockStart = 0;
+                            // Snap cursor to hand
+                            target.x = (1 - lm[9].x) * window.innerWidth;
+                            target.y = lm[9].y * window.innerHeight;
+                            physics.x = target.x; physics.y = target.y; 
+                        } else {
+                            // Visual Feedback
+                            container.className = 'locked unlocking';
+                            status.innerText = "HOLD TO UNLOCK...";
+                            status.style.color = "#fff";
+                        }
+                    } 
+                    else if (isStrictThumbUp) {
+                        state.mode = 'AUTHORIZING';
+                        state.unlockStart = 0;
+                    } 
+                    else {
+                        // Any other gesture (e.g. relaxed hand) -> STAY LOCKED
+                        state.mode = 'LOCKED';
+                        state.unlockStart = 0;
+                        updateUI();
+                    }
+                } 
+                else {
+                    // ROAMING MODES
+                    if (fingers >= 4) { 
+                        state.mode = 'SCANNING';
+                        target.x = (1 - lm[9].x) * window.innerWidth;
+                        target.y = lm[9].y * window.innerHeight;
+                    } 
+                    else if (fingers === 3) {
+                        state.mode = 'LOCKED';
+                        physics.x = target.x; physics.y = target.y; 
+                    }
+                    else if (isStrictThumbUp) {
+                        state.mode = 'AUTHORIZING';
+                        // Center if we haven't scanned yet
+                        if(physics.x === 0) { physics.x = window.innerWidth/2; physics.y = window.innerHeight/2; }
+                    }
+                    else {
+                        state.mode = 'IDLE'; 
+                    }
+                }
+            } else {
+                if(state.mode !== 'LOCKED' && state.mode !== 'AUTHORIZING') state.mode = 'IDLE';
+                state.unlockStart = 0;
+                if(state.mode === 'LOCKED') updateUI();
+            }
+
+            // PHYSICS
+            if (state.mode === 'SCANNING') {
+                physics.x += (target.x - physics.x) * SMOOTH;
+                physics.y += (target.y - physics.y) * SMOOTH;
+                if(state.hasImage) updateZoom();
+            } else if (state.mode === 'LOCKED' || state.mode === 'AUTHORIZING') {
+                if(state.hasImage) updateZoom();
+            }
+
+            // RENDER
+            if (state.mode !== 'IDLE') {
+                container.style.display = 'block';
+                container.style.left = physics.x + "px"; container.style.top = physics.y + "px";
+                if(state.unlockStart === 0 && state.mode !== 'TRANSMITTING') updateUI();
+            } else {
+                container.style.display = 'none';
+                updateUI();
+            }
+            requestAnimationFrame(() => loop(landmarker, video));
+        }
+
+        function updateUI() {
+            container.className = state.mode.toLowerCase();
+            if(state.mode === 'IDLE') status.innerText = "IDLE (FIST)";
+            if(state.mode === 'SCANNING') status.innerText = "SCANNING";
+            if(state.mode === 'LOCKED') { status.innerText = "LOCKED (OPEN 0.25s TO UNLOCK)"; status.style.color = "#00ff9d"; }
+            if(state.mode === 'AUTHORIZING') { status.innerText = "READY TO SEND (STRICT THUMB)"; status.style.color = "#ffd700"; }
+        }
+
+        function updateZoom() {
+            const sw = window.innerWidth, sh = window.innerHeight;
+            const ar = currentImg.w / currentImg.h; const sar = sw / sh;
+            let rw, rh;
+            if (ar > sar) { rw = sw; rh = sw / ar; } else { rh = sh; rw = sh * ar; }
+            optic.style.backgroundSize = `${rw*ZOOM}px ${rh*ZOOM}px`;
+            optic.style.backgroundPosition = `${-(physics.x*ZOOM)+175 + (sw-rw)/2}px ${-(physics.y*ZOOM)+175 + (sh-rh)/2}px`;
+        }
+
+        function flashStatus(msg, color) {
+            const old = status.innerText; const oldC = status.style.color;
+            status.innerText = msg; status.style.color = color;
+            setTimeout(() => { status.innerText = old; status.style.color = oldC; }, 1500);
+        }
+
+        // LOCAL FILE HANDLER
+        document.getElementById("file-input").addEventListener('change', (e) => {
+            Array.from(e.target.files).forEach(f => {
+                const r = new FileReader();
+                r.onload = (ev) => {
+                    addImageToGallery(ev.target.result);
+                };
+                r.readAsDataURL(f);
+            });
+        });
+        
+        // Init Default
+        const t = document.createElement('div'); t.className = 'thumb active';
+        t.innerHTML = `<img src="${currentImg.url}">`;
+        t.onclick = () => selectPhoto(0);
+        document.getElementById('gallery').appendChild(t);
+        selectPhoto(0);
+        initVision();
+    </script>
+</body>
+</html>
