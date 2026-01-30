@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Surgi-Wave: Receiver (Fixed Lock)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root { --primary: #00ff9d; --lock: #00e5ff; --bg: #0a0a0a; --panel: #111; --border: #333; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Segoe UI', monospace; cursor: default; color: #eee; }
+
+        /* LOCK SCREEN */
+        #connect-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(5, 5, 5, 0.98); z-index: 1000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        
+        .panel-box {
+            background: var(--panel); border: 1px solid var(--border); padding: 30px;
+            border-radius: 12px; text-align: center; width: 300px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+        
+        input { width: 100%; padding: 12px; margin: 15px 0; background: #000; border: 1px solid #444; color: var(--primary); text-align: center; font-family: monospace; font-size: 16px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--primary); border: none; color: #000; font-weight: bold; cursor: pointer; border-radius: 4px; font-size: 14px; transition: 0.2s; }
+        .id-display { font-size: 20px; color: #fff; margin-bottom: 5px; cursor: pointer; border-bottom: 1px dashed #666; display: inline-block; }
+
+        /* MAIN APP */
+        #app-container { display: none; opacity: 0; transition: opacity 1s; }
+        #app-container.active { display: block; opacity: 1; }
+
+        #viewport {
+            position: relative; width: 100vw; height: 100vh;
+            background-size: contain; background-repeat: no-repeat; background-position: center;
+            transition: background-image 0.2s ease;
+        }
+
+        /* CURSOR */
+        #cursor-container { position: absolute; width: 0; height: 0; transform: translate(-50%, -50%); display: none; z-index: 200; pointer-events: none; }
+        .optic {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            transition: width 0.1s, height 0.1s; border-radius: 50%; box-sizing: border-box;
+            background-color: var(--bg); background-size: contain; background-repeat: no-repeat;
+        }
+
+        /* STATES */
+        /* SCANNING (Open Hand - Green) */
+        #cursor-container.scanning .optic { width: 350px; height: 350px; border: 2px solid var(--primary); box-shadow: 0 0 30px rgba(0,255,157,0.3); }
+        
+        /* LOCKED (3 Fingers - Blue) */
+        #cursor-container.locked .optic { 
+            width: 350px; height: 350px; border: 4px solid var(--lock); 
+            box-shadow: 0 10px 50px rgba(0,229,255,0.8);
+        }
+        
+        /* RECEIVING (Gold) */
+        #cursor-container.receiving .optic { width: 350px; height: 350px; border: 4px solid #ffd700; animation: pulse 0.5s infinite; }
+        @keyframes pulse { 50% { transform: translate(-50%, -50%) scale(1.05); } }
+
+        /* HUD */
+        #hud { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: auto; width: 90%; }
+        #status-pill { display: inline-block; padding: 8px 16px; background: rgba(0,0,0,0.8); border: 1px solid #333; border-radius: 20px; font-size: 12px; color: #888; margin-bottom: 10px; }
+        
+        #gallery-bar { display: flex; gap: 8px; justify-content: center; overflow-x: auto; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 12px; max-width: 100%; }
+        .thumb { width: 60px; height: 60px; border: 1px solid #333; opacity: 0.6; cursor: pointer; flex-shrink: 0; border-radius: 4px; overflow: hidden; transition: 0.2s; }
+        .thumb.active { border-color: var(--primary); opacity: 1; transform: scale(1.1); box-shadow: 0 0 10px rgba(0,255,157,0.3); }
+        .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    </style>
+</head>
+<body>
+
+    <div id="connect-overlay">
+        <div class="panel-box">
+            <div style="color:#666; font-size:10px; letter-spacing:2px; margin-bottom:10px;">RECEIVER ID</div>
+            <div class="id-display" id="my-id" onclick="navigator.clipboard.writeText(this.innerText)">Generating...</div>
+            <div style="color:#444; font-size:10px; margin-bottom:20px;">(Click to Copy)</div>
+            <hr style="border:0; border-top:1px solid #333; margin:20px 0;">
+            <input type="text" id="partner-id" placeholder="Enter Sender ID">
+            <button onclick="connectToPartner()">CONNECT</button>
+            <div id="conn-status" style="margin-top:15px; font-size:12px; color:#ff0055;"></div>
+        </div>
+    </div>
+
+    <div id="app-container">
+        <div id="viewport">
+            <div id="cursor-container" class="idle"><div class="optic"></div></div>
+        </div>
+        <div id="hud">
+            <div id="status-pill">WAITING FOR DATA...</div>
+            <div id="gallery-bar"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+        const ZOOM = 3.0; const SMOOTH = 0.15; const REQ_COOLDOWN = 1000;
+        let physics = { x: 0, y: 0 }, target = { x: 0, y: 0 };
+        let state = { mode: 'IDLE', connected: false, hasImage: false };
+        let currentImg = { w: 1, h: 1, url: '' };
+        let lastReq = 0;
+        let imageHistory = [];
+
+        // DOM
+        const overlay = document.getElementById("connect-overlay");
+        const app = document.getElementById("app-container");
+        const container = document.getElementById("cursor-container");
+        const optic = document.querySelector(".optic");
+        const viewport = document.getElementById("viewport");
+        const status = document.getElementById("status-pill");
+        const galleryBar = document.getElementById("gallery-bar");
+
+        // --- 1. PEERJS ---
+        const peer = new Peer();
+        let conn = null;
+
+        peer.on('open', id => document.getElementById('my-id').innerText = id);
+        
+        peer.on('connection', (c) => { conn = c; setupConnection(); });
+
+        window.connectToPartner = function() {
+            const pid = document.getElementById("partner-id").value.trim();
+            if(!pid) return;
+            document.getElementById("conn-status").innerText = "Connecting...";
+            conn = peer.connect(pid);
+            setupConnection();
+        }
+
+        function setupConnection() {
+            conn.on('open', () => {
+                state.connected = true;
+                overlay.style.display = "none";
+                app.classList.add("active");
+                document.body.style.cursor = "none";
+                status.innerText = "CONNECTED - READY";
+                status.style.color = "#00ff9d";
+
+                conn.on('data', data => {
+                    if(data.type === 'BINARY_IMAGE') {
+                        const blob = new Blob([data.payload], { type: data.mime });
+                        receiveImage(URL.createObjectURL(blob));
+                    }
+                });
+            });
+            conn.on('close', () => location.reload());
+        }
+
+        function receiveImage(url) {
+            state.mode = 'RECEIVING'; updateUI();
+            
+            imageHistory.push(url);
+            const idx = imageHistory.length - 1;
+
+            const thumb = document.createElement('div');
+            thumb.className = 'thumb';
+            thumb.innerHTML = `<img src="${url}">`;
+            thumb.onclick = () => openImage(idx);
+            galleryBar.prepend(thumb); 
+
+            setTimeout(() => {
+                openImage(idx);
+                state.mode = 'SCANNING'; // Start in scan mode so they can see it
+                updateUI();
+            }, 500);
+        }
+
+        function openImage(index) {
+            const url = imageHistory[index];
+            currentImg.url = url;
+            state.hasImage = true;
+
+            const img = new Image(); img.src = url;
+            img.onload = () => {
+                currentImg.w = img.width; currentImg.h = img.height;
+                viewport.style.backgroundImage = `url(${url})`;
+                optic.style.backgroundImage = `url(${url})`;
+                updateZoom();
+            };
+
+            Array.from(galleryBar.children).forEach(t => t.classList.remove('active'));
+            Array.from(galleryBar.children).forEach(t => {
+                if(t.querySelector('img').src === url) t.classList.add('active');
+            });
+        }
+
+        // --- 2. VISION LOOP ---
+        async function initVision() {
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm");
+            const landmarker = await HandLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: "GPU" }, runningMode: "VIDEO", numHands: 1 });
+            const video = document.createElement("video");
+            navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+                video.srcObject = stream; video.play();
+                video.addEventListener("loadeddata", () => loop(landmarker, video));
+            });
+        }
+
+        function loop(landmarker, video) {
+            if (!state.connected) { requestAnimationFrame(() => loop(landmarker, video)); return; }
+
+            const now = performance.now();
+            const results = landmarker.detectForVideo(video, now);
+            
+            if (results.landmarks.length > 0) {
+                const lm = results.landmarks[0];
+                const fingers = [8,12,16,20].filter(i => Math.hypot(lm[i].x-lm[0].x, lm[i].y-lm[0].y) > Math.hypot(lm[i-2].x-lm[0].x, lm[i-2].y-lm[0].y)*1.1).length;
+
+                if (state.mode !== 'RECEIVING') {
+                    // 1. THUMBS UP / 3 FINGERS -> LOCK & REQUEST
+                    // (Some people count thumbs up as 3 fingers visually, so we check for both)
+                    const isThumbUp = (lm[4].y < lm[3].y) && (lm[8].y > lm[6].y); 
+                    
+                    if (fingers === 3 || isThumbUp && fingers < 4) { 
+                        // FORCE LOCK
+                        state.mode = 'LOCKED';
+                        
+                        // We DO NOT update target.x/y here. 
+                        // Physics stays exactly where it was last scan frame.
+                        
+                        // Send Request
+                        if(Date.now() - lastReq > REQ_COOLDOWN) {
+                            conn.send('PULL_REQUEST');
+                            lastReq = Date.now();
+                            status.innerText = "REQUESTING SENDER...";
+                            status.style.color = "#ffd700";
+                        }
+                    }
+                    // 2. OPEN HAND (4 or 5) -> SCAN
+                    else if (fingers >= 4) { 
+                        state.mode = 'SCANNING';
+                        target.x = (1 - lm[9].x) * window.innerWidth;
+                        target.y = lm[9].y * window.innerHeight;
+                    }
+                    // 3. FIST -> HIDE
+                    else {
+                        // Only hide if we aren't Locked. Lock overrides Idle.
+                        if(state.mode !== 'LOCKED') state.mode = 'IDLE';
+                    }
+                }
+            } else {
+                // Keep locked if hand leaves frame
+                if(state.mode !== 'LOCKED') state.mode = 'IDLE';
+            }
+
+            // PHYSICS UPDATE
+            if (state.mode === 'SCANNING') {
+                physics.x += (target.x - physics.x) * SMOOTH;
+                physics.y += (target.y - physics.y) * SMOOTH;
+                if(state.hasImage) updateZoom();
+            } else if (state.mode === 'LOCKED') {
+                // Even when locked, we must call updateZoom to keep it rendering
+                // But we DO NOT update physics.x/y, so it stays frozen.
+                if(state.hasImage) updateZoom();
+            }
+
+            // RENDER
+            updateUI();
+            if (state.mode !== 'IDLE') {
+                container.style.display = 'block';
+                container.style.left = physics.x + "px"; container.style.top = physics.y + "px";
+            } else {
+                container.style.display = 'none';
+            }
+
+            requestAnimationFrame(() => loop(landmarker, video));
+        }
+
+        function updateUI() {
+            container.className = state.mode.toLowerCase();
+            if(state.mode === 'IDLE') status.innerText = "IDLE (FIST)";
+            if(state.mode === 'SCANNING') { status.innerText = "SCANNING"; status.style.color = "#00ff9d"; }
+            if(state.mode === 'LOCKED') { status.innerText = "LOCKED (REQUESTING)"; status.style.color = "#00e5ff"; }
+            if(state.mode === 'RECEIVING') { status.innerText = "INCOMING DATA..."; status.style.color = "#ffd700"; }
+        }
+
+        function updateZoom() {
+            const sw = window.innerWidth, sh = window.innerHeight;
+            const ar = currentImg.w / currentImg.h;
+            const sar = sw / sh;
+            let rw, rh;
+            if (ar > sar) { rw = sw; rh = sw / ar; } else { rh = sh; rw = sh * ar; }
+            optic.style.backgroundSize = `${rw*ZOOM}px ${rh*ZOOM}px`;
+            optic.style.backgroundPosition = `${-(physics.x*ZOOM)+175 + (sw-rw)/2}px ${-(physics.y*ZOOM)+175 + (sh-rh)/2}px`;
+        }
+
+        initVision();
+    </script>
+</body>
+</html>
