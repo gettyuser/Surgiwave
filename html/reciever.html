@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Surgi-Wave | Receiver Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="css/main.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <script src="js/main.js" type="module"></script>
+</head>
+<body>
+
+    <div id="connect-overlay">
+        <div class="glass-panel">
+            <div class="status-indicator">RECEIVER NODAL ID</div>
+            <div id="my-id" class="id-display">Generating...</div>
+            <hr>
+            <input type="text" id="hub-id" placeholder="Enter Sender Hub ID">
+            <button id="establish-link">ESTABLISH UPLINK</button>
+            <div id="network-log">Awaiting authentication...</div>
+        </div>
+    </div>
+
+    <div id="display-container">
+        <div id="master-viewport">
+            <div id="cursor-controller" class="idle">
+                <div class="optic-lens"></div>
+            </div>
+        </div>
+        
+        <div id="overlay-hud">
+            <div id="active-status">LINK OFFLINE</div>
+            <div id="incoming-gallery"></div>
+        </div>
+    </div>
+
+</body>
+</html>
