@@ -23,26 +23,11 @@ Surgi-Wave is a gesture-controlled image viewer designed for operating rooms. It
 ### Prerequisites
 Because this app uses the **Camera** and **WebRTC**, browsers require it to be served over **HTTPS** (or `localhost`). You cannot simply drag the HTML files into your browser if you want to connect a phone.
 
-### Quick Start (Python)
-1.  Clone the repository.
-2.  Install the simple server dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-3.  Run the secure server:
-    ```bash
-    python server.py
-    ```
-4.  Open your browser to `https://localhost:8000` (Accept the security warning, it's a self-signed cert for local dev).
-
 ### The Workflow
 1.  **Open `sender.html`** on the main computer (The Hub).
     * Click "Copy ID".
 2.  **Open `receiver.html`** on a second screen.
     * Paste the Sender ID and connect.
-3.  **Open `camera.html`** on a smartphone (connected to the same Wi-Fi).
-    * Enter the Sender ID and connect.
-    * Take photos to instantly beam them to the Hub.
 
 ## 🖐️ Gesture Guide
 
