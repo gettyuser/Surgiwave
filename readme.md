@@ -6,6 +6,16 @@ Surgiwave is a professional-grade, gesture-controlled system designed for operat
 
 ![Status](https://img.shields.io/badge/Status-Operational-success)
 ![Tech](https://img.shields.io/badge/Stack-Modular%20JS%20%7C%20MediaPipe%20%7C%20PeerJS-blue)
+![Deployment](https://img.shields.io/badge/Hosted-Vercel-black)
+
+---
+
+## 🌐 Live Demo & Real-World Testing
+
+You can test the P2P gesture control system in real-time using the links below. For the best experience, open the **Sender** on a laptop and the **Receiver** on a separate screen or tablet.
+
+* **[Control Hub (Sender)](https://surgiwav.vercel.app/sender.html)**: Primary interface for image manipulation and transmission.
+* **[Monitor View (Receiver)](https://surgiwav.vercel.app/reciever.html)**: Passive display for receiving beamed imagery.
 
 ---
 
